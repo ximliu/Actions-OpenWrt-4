@@ -39,10 +39,9 @@ fi
 
 
 
-rm -Rf openwrt Actions-OpenWrt
-git clone https://github.com/openwrt/openwrt
-git clone https://github.com/garypang13/Actions-OpenWrt
-cp -Rf Actions-OpenWrt/* openwrt/
+rm -Rf openwrt
+git clone -b master --depth 1 https://github.com/openwrt/openwrt
+svn co https://github.com/garypang13/Actions-OpenWrt/trunk/devices openwrt/devices
 cd openwrt
 echo "
 
@@ -52,9 +51,17 @@ echo "
 
 3. RedMi_AC2100
 
-4. 自定义
+4. r2s
 
-5. Exit
+5. newifi-d2
+
+6. hiwifi-hc5962
+
+7. XY-C5
+
+8. phicomm-N1
+
+9. Exit
 
 "
 
@@ -68,19 +75,35 @@ case $CHOOSE in
 	break
 	;;
 	2)
-		firmware="k2p"
+		firmware="phicomm-k2p"
 	break
 	;;
 	3)
-		firmware="redmi_ac2100"
+		firmware="redmi-ac2100"
 	break
 	;;
 	4)
-		firmware="other"
+		firmware="nanopi-r2s"
+	break
+	;;
+	5)
+		firmware="newifi-d2"
+	break
+	;;
+	6)
+		firmware="hiwifi-hc5962"
+	break
+	;;
+	7)
+		firmware="XY-C5"
+	break
+	;;
+	8)
+		firmware="phicomm-N1"
 		make menuconfig
 	break
 	;;
-	5)	exit 0
+	9)	exit 0
 	;;
 
 esac
@@ -90,57 +113,35 @@ done
 read -p "请输入后台地址 [回车默认10.0.0.1]: " ip
 ip=${ip:-"10.0.0.1"}
 echo "您的后台地址为: $ip"
-
-
-if [ -f "common/feeds.conf" ]; then
-        (
-          mv common/feeds.conf ./
-        )
-fi       
-if [ -f "$firmware/feeds.conf" ]; then
-        (
-          mv $firmware/feeds.conf ./
-        )
+cp -rf devices/common/* ./
+cp -rf devices/$firmware/* ./
+./scripts/feeds update -a
+cp -Rf ./diy/* ./
+if [ -f "devices/common/diy.sh" ]; then
+		chmod +x devices/common/diy.sh
+		/bin/bash "devices/common/diy.sh"
 fi
-if [ -n "$(ls -A "common/files" 2>/dev/null)" ]; then
-	cp -rf common/files files
+if [ -f "devices/$firmware/diy.sh" ]; then
+		chmod +x devices/$firmware/diy.sh
+		/bin/bash "devices/$firmware/diy.sh"
 fi
-if [ -n "$(ls -A "$firmware/files" 2>/dev/null)" ]; then
-	cp -rf $firmware/files/* files/
+if [ -f "devices/common/default-settings" ]; then
+	sed -i 's/10.0.0.1/$ip/' devices/common/default-settings
+	cp -f devices/common/default-settings package/*/*/default-settings/root/etc/uci-defaults/99-default-settings
 fi
-if [ -f "common/diy.sh" ]; then
-	(
-		chmod +x common/diy.sh
-		/bin/bash "common/diy.sh"
-	)
+if [ -f "devices/$firmware/default-settings" ]; then
+	sed -i 's/10.0.0.1/$ip/' devices/$firmware/default-settings
+	cat -f devices/$firmware/default-settings >> package/*/*/default-settings/root/etc/uci-defaults/99-default-settings
 fi
-if [ -f "$firmware/diy.sh" ]; then
-	(
-		chmod +x $firmware/diy.sh
-		/bin/bash "$firmware/diy.sh"
-	)
+if [ -n "$(ls -A "devices/common/patches" 2>/dev/null)" ]; then
+          find "devices/common/patches" -type f -name '*.patch' -print0 | sort -z | xargs -I % -t -0 -n 1 sh -c "cat '%'  | patch -d './' -p1 --forward"
 fi
-if [ -f "common/default-settings" ]; then
-	sed -i 's/10.0.0.1/$ip/' common/default-settings
-	cp -f common/default-settings package/*/*/default-settings/files/zzz-default-settings
+if [ -n "$(ls -A "devices/$firmware/patches" 2>/dev/null)" ]; then
+          find "devices/$firmware/patches" -type f -name '*.patch' -print0 | sort -z | xargs -I % -t -0 -n 1 sh -c "cat '%'  | patch -d './' -p1 --forward"
 fi
-if [ -f "$firmware/default-settings" ]; then
-	sed -i 's/10.0.0.1/$ip/' $firmware/default-settings
-	cat -f $firmware/default-settings >> package/*/*/default-settings/files/zzz-default-settings
-fi
-if [ -n "$(ls -A "common/diy" 2>/dev/null)" ]; then
-	cp -Rf common/diy/* ./
-fi
-if [ -n "$(ls -A "$firmware/diy" 2>/dev/null)" ]; then
-	cp -Rf $firmware/diy/* ./
-fi
-if [ -n "$(ls -A "common/patches" 2>/dev/null)" ]; then
-          find "common/patches" -type f -name '*.patch' -print0 | sort -z | xargs -I % -t -0 -n 1 sh -c "cat '%'  | patch -d './' -p0 --forward"
-fi
-if [ -n "$(ls -A "$firmware/patches" 2>/dev/null)" ]; then
-          find "$firmware/patches" -type f -name '*.patch' -print0 | sort -z | xargs -I % -t -0 -n 1 sh -c "cat '%'  | patch -d './' -p0 --forward"
-fi
-cp $firmware/.config .config
+cp devices/common/.config .config
+echo >> .config
+cat devices/$firmware/.config >> .config
 make menuconfig
 echo
 echo
@@ -157,6 +158,7 @@ sleep 5s
 
 make -j$(($(nproc)+1)) download v=s ; make -j$(($(nproc)+1)) || make -j1 V=s
 
+if [ "$?" == "0" ]; then
 echo "
 
 编译完成~~~
@@ -165,3 +167,4 @@ echo "
 初始用户名密码: root  root
 
 "
+fi
